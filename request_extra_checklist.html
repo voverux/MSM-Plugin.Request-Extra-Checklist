@@ -1,0 +1,289 @@
+<script src="Template.js"></script>
+
+<template id="ExtraCheckList">
+    <style>
+        .mb-plugins-request-extra-checklist{
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
+
+        .mb-plugins-request-extra-checklist > input{
+            box-sizing: border-box;
+            flex-shrink: 0;
+            padding: 10px;
+            width: 100%;
+            border: 0;
+            border-bottom: 1px solid #000;
+            outline: none;
+        }
+
+        .mb-plugins-request-extra-checklist > ul{
+            flex: 1;
+            overflow: auto;
+        }
+
+        .mb-plugins-request-extra-checklist > ul > li{
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            padding: 10px;
+        }
+
+        .mb-plugins-request-extra-checklist > ul > li:nth-child(even){
+            background: #E8F1FF;
+        }
+
+        .mb-plugins-request-extra-checklist > ul > li > * + *{
+            margin-left: 10px;
+        }
+
+        .mb-plugins-request-extra-checklist > ul > li > input{
+            flex-shrink: 0;
+        }
+
+        .mb-plugins-request-extra-checklist > ul > li > span{
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mb-plugins-request-extra-checklist > ul > li > span.isComplete{
+            text-decoration: line-through;
+        }
+
+        .mb-plugins-request-extra-checklist > ul > li > a{
+            display: block;
+            flex-shrink: 0;
+            visibility: hidden;
+            color: #F00;
+            text-decoration: none;
+        }
+
+        .mb-plugins-request-extra-checklist > ul > li:hover > a{
+            visibility: visible;
+        }
+    </style>
+
+    <div class="mb-plugins-request-extra-checklist">
+        <input type="text" placeholder="Enter new element here" />
+        <ul></ul>
+    </div>
+</template>
+
+<template id="ExtraCheckListRow">
+    <li>
+        <span></span>
+        <a href="javascript:void(0);">Delete</a>
+    </li>
+</template>
+
+<script>
+    (function(){
+        
+        var MarvalSoftware = window.top.MarvalSoftware;
+
+        MarvalSoftware.Plugins.define("mb-plugins-request-extra-checklist",
+        {
+            _attributeEntererElement: null,
+            _element: null,
+			_listData: [],
+            _textElement: null,
+            _listElement: null,
+			_listParams: {
+				fixedEntries: [],
+				fieldsDef:[{"id":"chk","type":"chk"}],
+				newElementPlaceholder:"Enter new element here",
+				autoCheck: false,
+				markCompleted: true
+			},
+
+            init: function(){
+                this._getPluginParameters(function(pluginParameters){
+					if(pluginParameters.split("|").length!=3){
+						this._pluginLogConsole("Plugin parameters are incorrect.");
+						return;
+					}
+					var requestAttributeTypeId = Number(pluginParameters.split("|")[0]);
+                    if (requestAttributeTypeId > 0){
+                        this._attributeEntererElement = window.top.document.querySelector("[id$=AttributeEnterer_" + requestAttributeTypeId + "_entry_" + requestAttributeTypeId + "]");
+                        if (this._attributeEntererElement && this._attributeEntererElement.tagName == "TEXTAREA"){
+                                this._listData = JSON.parse(this._attributeEntererElement.value || "[]");
+                                this._attributeEntererElement.parentNode.style.display = "none";
+								var layoutId = this._msmGetLayoutId();
+								var requestLayoutIds = pluginParameters.split("|")[1].split(",").map(Number);
+								if(layoutId && requestLayoutIds.indexOf(layoutId)>=0){
+									var params = pluginParameters.split("|")[2];
+									if(params && params.trim().length>0) this._listParams = JSON.parse(params);
+									this._thansformField(this._attributeEntererElement.parentNode);
+								}
+                        }
+						else{
+							this._pluginLogConsole("Attribute " + requestAttributeTypeId + " was not found in a form or it is not multiline type.");
+						}
+                    }
+					else{
+						this._pluginLogConsole("Attribute Id is not set in plugin settings or it's not a number.");
+					}
+                }.bind(this));
+            },
+            _getPluginParameters: function(callback){
+                var xmlHttpRequest = new XMLHttpRequest();
+                xmlHttpRequest.addEventListener("load", function(e){
+                    callback(xmlHttpRequest.responseText);
+                }.bind(this));
+                xmlHttpRequest.open("GET", this.dataset.pluginpath + "/Handler.ashx", true);
+                xmlHttpRequest.send();
+            },
+			_thansformField: function(fld){
+				this._renderElement();
+				this._renderListData();
+				fld.parentNode.insertBefore(this, fld.nextSibling);
+			},
+            _renderElement: function(){
+                var listTemplate = document.querySelector("#ExtraCheckList").content;
+                this._element = window.top.document.importNode(listTemplate, true);
+                this._textElement = this._element.querySelector("input");
+				if(this._listParams.fixedEntries.length==0){
+					if(this._listParams.newElementPlaceholder) this._textElement.placeholder = this._listParams.newElementPlaceholder.trim();
+					this._textElement.addEventListener("keydown", this._textElement_keydown.bind(this));
+				}
+				else 
+					this._textElement.style.display="none";
+                this._listElement = this._element.querySelector("ul");
+                //this._listElement.addEventListener("click", this._listElement_click.bind(this));
+                this.appendChild(this._element);
+            },
+            _renderListData: function(){
+				if(this._listParams.fixedEntries.length>0 && (!this._listData || this._listData.length==0)) {
+					this._listParams.fixedEntries.forEach(this._createNewListDataRow(this));
+				}
+                else this._listData.forEach(this._renderListRow.bind(this));
+            },
+            _renderListRow: function(listDataRow){
+                var listElementTemplate = document.querySelector("#ExtraCheckListRow").content;
+                var listElement = window.top.document.importNode(listElementTemplate, true);
+				listElement.querySelector("span").textContent = listDataRow.text;
+				var elm_del = listElement.querySelector("a");
+				if(this._listParams.fixedEntries.length>0)elm_del.style.display="none";
+				else elm_del.addEventListener("click", this._listElement_deleteClick.bind(this));
+				
+				var allChecked=null;
+				for (var i=0; i<this._listParams.fieldsDef.length;i++){
+					var elm = document.createElement('input');
+					elm.id = "lst-fld-"+this._listParams.fieldsDef[i].id;
+					var lbl = document.createElement('label');
+					lbl.htmlFor = elm.id;
+					lbl.appendChild(document.createTextNode(this._listParams.fieldsDef[i].label || ""));
+					switch(this._listParams.fieldsDef[i].type){
+						case "chk":
+							elm.type = "checkbox";
+							elm.checked = listDataRow[elm.id]==true;
+							elm_del.parentNode.insertBefore(elm, elm_del);
+							lbl.style.marginLeft = "2px";
+							elm_del.parentNode.insertBefore(lbl, elm_del);
+							if(elm.checked==false)allChecked=false;
+							else if(allChecked==null)allChecked=true;
+							elm.addEventListener("click", this._listElement_dataChanged.bind(this));
+							break;
+						case "txt":
+							elm.type = "text";
+							elm.value = listDataRow[elm.id] || "";
+							elm.style.marginLeft = "2px";
+							elm_del.parentNode.insertBefore(lbl, elm_del);
+							elm_del.parentNode.insertBefore(elm, elm_del);
+							elm.addEventListener("change", this._listElement_dataChanged.bind(this));
+							elm.addEventListener("paste", this._listElement_dataChanged.bind(this));
+							elm.addEventListener("cut", this._listElement_dataChanged.bind(this));
+							break;
+					}
+				};
+
+                if (this._listParams.markCompleted==true && allChecked!=null && allChecked!=false){
+                    listElement.querySelector("li span").classList.add("isComplete");
+                }
+
+                this._listElement.appendChild(listElement);
+            },
+            _createNewListDataRow: function(text){
+                var listDataRow ={text: text};
+                this._renderListRow(listDataRow);
+                this._listData.push(listDataRow);
+                this._saveListData();
+            },
+            _updateListDataRow: function(index){
+				for (var i=0; i<this._listParams.fieldsDef.length;i++){
+					var fldid = "lst-fld-"+this._listParams.fieldsDef[i].id;
+					switch(this._listParams.fieldsDef[i].type){
+						case "chk":
+							this._listData[index][fldid] = this._listElement.children[index].querySelector("#"+fldid).checked;
+							break;
+						case "txt":
+							this._listData[index][fldid] = this._listElement.children[index].querySelector("#"+fldid).value;
+							break;
+					}
+				}
+                this._saveListData();
+            },
+            _deleteListDataRow: function(index){
+                this._listElement.removeChild(this._listElement.children[index]);
+                this._listData.splice(index, 1);
+                this._saveListData();
+            },
+            _saveListData: function(){
+                this._attributeEntererElement.value = this._listData.length > 0 ? JSON.stringify(this._listData) : "";
+            },
+            _getListElementIndex: function(ListElement){
+                return Array.prototype.indexOf.call(ListElement.parentNode.children, ListElement);
+            },
+            _textElement_keydown: function(e){
+                if (e.keyCode == 13 && this._textElement.value !== ""){
+                    this._createNewListDataRow(this._textElement.value);
+                    this._textElement.value = "";
+                    e.preventDefault();
+                }
+            },
+            _listElement_deleteClick: function(e){
+				if (e.target.tagName == "A") this._deleteListDataRow(this._getListElementIndex(e.target.parentNode));
+			},
+            _listElement_dataChanged: function(e){
+                if (e.target.tagName == "INPUT"){
+				
+					// Atomatic "set all on the left" or "unset all on the right" feature
+					if(this._listParams.autoCheck==true){
+						var fldid_current = e.target.id;
+						var left=true;
+						for (var i=0; i<this._listParams.fieldsDef.length;i++){
+							var fldid = "lst-fld-"+this._listParams.fieldsDef[i].id;
+							if(fldid==fldid_current) {left=false;continue;}
+							if(left && e.target.checked) e.target.parentNode.querySelector("#"+fldid).checked=true;
+							if(!left && !e.target.checked) e.target.parentNode.querySelector("#"+fldid).checked=false;
+						}
+					}
+					this._updateListDataRow(this._getListElementIndex(e.target.parentNode));
+					
+					// If all checkboxes are checked mark entry as Completed
+					if(this._listParams.markCompleted){
+						var checkboxes_exist = false;
+						var unchecked_exists = false;
+						for (var i=0; i<this._listParams.fieldsDef.length;i++){
+							if(this._listParams.fieldsDef[i].type=="chk"){
+								checkboxes_exist=true;
+								if(!e.target.parentNode.querySelector("#lst-fld-"+this._listParams.fieldsDef[i].id).checked)unchecked_exists=true;
+							}
+						}
+						if(checkboxes_exist==true && unchecked_exists==false) e.target.parentNode.querySelector("span").classList.add("isComplete");
+						else e.target.parentNode.querySelector("span").classList.remove("isComplete");
+					}
+                }
+            },
+			_msmGetLayoutId: function(){
+				return MarvalSoftware.UI.Controls.ScriptManager.getInstance().getControl("__Page")._layoutId;
+			},
+			_pluginLogConsole: function(s){console.log(s);}
+			
+        });
+
+    })();
+</script>
